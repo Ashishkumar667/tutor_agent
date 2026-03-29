@@ -352,19 +352,21 @@ app.post("/chat", async (req, res) => {
     session.history.push({ role: "user", content: message });
 
     const tutorReply = await callGrok(systemPrompt,   trimHistory(toGrokHistory(session.history)));
-
+    console.log("Grok reply:", tutorReply);
     let cloudinaryResult = null;
 
     try {
          const audioBuffer = await textToSpeech(tutorReply);
-
+        console.log("Audio buffer generated, size:", audioBuffer.length);
+        console.log("Uploading audio to Cloudinary...");
         cloudinaryResult = await uploadToCloudinary(audioBuffer);
+        console.log("Cloudinary upload result:", cloudinaryResult);
     } catch (error) {
         console.log("Audio generation/upload error:", error.message);
     }
 
     const url = cloudinaryResult?.secure_url || null;
-
+    console.log("Generated audio URL:", url); 
     session.history.push({ role: "assistant", content: tutorReply, audioUrl: url });
     session.lastActiveAt = new Date();
     await session.save();
