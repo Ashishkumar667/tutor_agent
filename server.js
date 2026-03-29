@@ -422,7 +422,7 @@ app.post("/quiz/start", async (req, res) => {
     let cloudinaryResult = null;
 
     try {
-         const audioBuffer = await textToSpeech(tutorReply);
+         const audioBuffer = await textToSpeech(intro);
 
         cloudinaryResult = await uploadToCloudinary(audioBuffer);
     } catch (error) {
