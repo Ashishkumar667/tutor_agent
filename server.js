@@ -21,10 +21,6 @@ const GROK_API_KEY      = process.env.GROK_API_KEY;
 const GROK_BASE_URL     = "https://api.x.ai/v1";
 const GROK_MODEL        = process.env.GROK_MODEL || "grok-4-1-fast-non-reasoning";
 
-const ELEVENLABS_API_KEY  = process.env.ELEVENLABS_API_KEY;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "EXAVITQu4vr4xnSDxMaL";
-const ELEVENLABS_TTS_URL  = `https://api.elevenlabs.io/v1/text-to-speech/${ELEVENLABS_VOICE_ID}`;
-console.log("elevan labs creds", ELEVENLABS_API_KEY, ELEVENLABS_VOICE_ID);
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY; 
 
 cloudinary.config({
@@ -60,7 +56,7 @@ function uploadToCloudinary(buffer){
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
-        resource_type: "video", // REQUIRED for audio
+        resource_type: "video", 
         folder: "generated_audio",
       },
       (error, result) => {
@@ -155,21 +151,24 @@ async function callGrok(systemPrompt, history, retries = 2) {
 
 async function textToSpeech(text, sessionId) {
  try {
-   const audioFileName = `${sessionId}_${Date.now()}.mp3`;
-   const audioFilePath = path.join(AUDIO_DIR, audioFileName);
- 
    const res = await axios.post(
-     ELEVENLABS_TTS_URL,
-     { text, model_id: "eleven_multilingual_v2", voice_settings: { stability: 0.5, similarity_boost: 0.75 } },
+     "https://api.openai.com/v1/audio/speech",
      {
-       headers: { "xi-api-key": ELEVENLABS_API_KEY, "Content-Type": "application/json", Accept: "audio/mpeg" },
+       model: "tts-1",
+       input: text,
+       voice: "alloy", 
+       response_format: "mp3"
+     },
+     {
+       headers: {
+         Authorization: `Bearer ${OPENAI_API_KEY}`,
+         "Content-Type": "application/json"
+       },
        responseType: "arraybuffer",
      }
    );
    console.log("Audio buffer received, size:", res.data.length);
-   fs.writeFileSync(audioFilePath, Buffer.from(res.data));
-   // return `/audio/${audioFileName}`;
-    return Buffer.from(res.data);
+   return Buffer.from(res.data);
  } catch (error) {
    console.error("Error generating audio:", error);
    throw error;

@@ -1,7 +1,7 @@
 {
   "name": "tutor-agent-backend",
   "version": "1.0.0",
-  "description": "AI Tutor Agent using Grok AI + ElevenLabs TTS + MongoDB",
+  "description": "AI Tutor Agent using Grok AI + OpenAI TTS + MongoDB",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
