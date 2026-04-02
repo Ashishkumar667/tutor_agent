@@ -237,33 +237,65 @@ app.use("/audio", express.static(AUDIO_DIR));
 
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
-    const { file } = req.body;
+    const { file } = req.body; // URL string
+    const rawFile = req.body.rawFile || req.body.fileData;
+    const rawFileName = req.body.rawFileName || req.body.originalName || "raw.txt";
     let text = "";
     let fileName = "";
+
     if (req.file) {
-      // fileName = req.file.originalname;
-      // text = await extractText(req.file.path, req.file.originalname);
-    }
-    else if (file) {
-  const response = await axios.get(file, { responseType: "arraybuffer" });
+      fileName = req.file.originalname;
+      text = await extractText(req.file.path, req.file.originalname);
+    } else if (rawFile) {
+      fileName = rawFileName;
+      let buffer;
+      const rawText = String(rawFile).trim();
+      if (rawText.startsWith("data:")) {
+        const d = rawText.match(/^data:(.+?);base64,(.*)$/);
+        if (!d) {
+          return res.status(400).json({ error: "Invalid data URI in rawFile." });
+        }
+        buffer = Buffer.from(d[2], "base64");
+      } else {
+        const base64Candidate = rawText.replace(/\s+/g, "");
+        const looksLikeBase64 = /^[A-Za-z0-9+/]+=*$/.test(base64Candidate) && base64Candidate.length % 4 === 0;
+        if (looksLikeBase64) {
+          try {
+            buffer = Buffer.from(base64Candidate, "base64");
+            if (buffer.toString("base64") !== base64Candidate) throw new Error("Not valid base64");
+          } catch (err) {
+            buffer = Buffer.from(rawText, "utf-8");
+          }
+        } else {
+          buffer = Buffer.from(rawText, "utf-8");
+        }
+      }
 
-  fileName = file;
+      const ext = path.extname(fileName).toLowerCase();
+      if (ext === ".pdf") {
+        const parsed = await pdfParse(buffer);
+        text = parsed.text;
+      } else {
+        text = buffer.toString("utf-8");
+      }
+    } else if (file) {
+      const response = await axios.get(file, { responseType: "arraybuffer" });
 
-  const contentType = response.headers["content-type"];
-  const cleanUrl = file.split("?")[0];
-  const ext = path.extname(cleanUrl).toLowerCase();
+      fileName = file;
 
-  if (contentType.includes("pdf") || ext === ".pdf") {
-    const parsed = await pdfParse(response.data);
-    text = parsed.text;
-  } else {
-    text = response.data.toString("utf-8");
-  }
-}
+      const contentType = response.headers["content-type"] || "";
+      const cleanUrl = file.split("?")[0];
+      const ext = path.extname(cleanUrl).toLowerCase();
 
-    else {
+      if (contentType.includes("pdf") || ext === ".pdf") {
+        const parsed = await pdfParse(response.data);
+        text = parsed.text;
+      } else {
+        text = response.data.toString("utf-8");
+      }
+    } else {
       return res.status(400).json({
-        error: "Provide either a file or a URL",
+        error: "Provide a multipart file, a URL in file field, or rawFile/fileData in request body.",
       });
     }
 
@@ -321,6 +353,71 @@ app.post("/upload", upload.single("file"), async (req, res) => {
   } catch (err) {
     console.error("Upload error:", err.message);
     res.status(500).json({ error: "Failed to process file.", detail: err.message });
+  }
+});
+
+app.post("/upload/raw", express.raw({ type: "*/*", limit: "20mb" }), async (req, res) => {
+  try {
+    const rawBuffer = req.body;
+    if (!rawBuffer || !Buffer.isBuffer(rawBuffer) || rawBuffer.length === 0) {
+      return res.status(400).json({ error: "Raw data is required in the request body." });
+    }
+
+    const fileName = req.headers["x-filename"] || req.query.filename || `raw_${uuidv4()}.txt`;
+    let text = "";
+    const ext = path.extname(fileName).toLowerCase();
+
+    if (ext === ".pdf") {
+      const parsed = await pdfParse(rawBuffer);
+      text = parsed.text;
+    } else {
+      text = rawBuffer.toString("utf-8");
+    }
+
+    const { chunkText, createEmbeddings } = require("./rag.utils");
+    const chunks = chunkText(text);
+    const embeddedChunks = await createEmbeddings(chunks);
+
+    const sessionId = req.query.sessionId || req.headers["x-session-id"] || uuidv4();
+    const greeting = await callGrok(buildSystemPrompt(text.slice(0, 2000), "teach"), [
+      { role: "user", content: "Hi! I just uploaded my study material. Please greet me and give a short overview of what we'll be learning." },
+    ]);
+
+    await Session.findOneAndUpdate(
+      { sessionId },
+      {
+        $set: {
+          sessionId,
+          fileName,
+          knowledgeChunks: embeddedChunks,
+          mode: "teach",
+          quizState: null,
+          lastActiveAt: new Date(),
+        },
+        $push: {
+          history: {
+            $each: [
+              { role: "user", content: "Hi! I just uploaded my study material." },
+              { role: "assistant", content: greeting, audioUrl: null },
+            ],
+          },
+        },
+      },
+      { upsert: true, new: true }
+    );
+
+    const cleanPreview = text.replace(/\s+/g, " ").trim().slice(0, 300);
+
+    res.json({
+      sessionId,
+      message: "Raw file uploaded successfully. Your tutor is ready!",
+      fileName,
+      previewText: cleanPreview + (text.length > 300 ? "..." : ""),
+      tutorGreeting: greeting,
+    });
+  } catch (err) {
+    console.error("Upload/raw error:", err.message);
+    res.status(500).json({ error: "Failed to process raw upload.", detail: err.message });
   }
 });
 
