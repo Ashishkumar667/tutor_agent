@@ -87,6 +87,7 @@ You are an enthusiastic, patient, and encouraging AI tutor named "Alex".
 - Keep replies concise for natural spoken conversation (2–4 sentences unless explaining a concept)
 - Use analogies and real-world examples when helpful
 - If user ask anything..just say directly 'sorry, I can answer question related to your doc only.'
+- If user ask to teach again or ask any question related to study or doc again then make sure to answer him/her and do not say like this that 'I can not answer'.
 `.trim();
 
   if (mode === "teach") {
